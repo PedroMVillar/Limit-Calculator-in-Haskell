@@ -1,0 +1,183 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Configuración de Paquetes
+\documentclass{article}
+\input{config_packages} % Incluir configuración de paquetes y encabezado
+\input{config_listings} % Incluir configuración de listings
+\input{config_mdframed} % Incluir configuración de mdframed
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\pagestyle{fancy}
+
+%Configuraciones adicionales
+\binoppenalty=\maxdimen 
+\relpenalty=\maxdimen 
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%Condiguracion de encabezado y pie de página
+\lhead{Calculo de Límites de Polinomios} %Encabezado a la izquierda 
+\rhead{Pedro Villar} %Sección 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\begin{document}
+
+\section{Introducción}
+
+Este documento sirve como guía para comprender una implementación en Haskell para analizar y calcular el límite de una función polinómica en un punto especificado. El código proporcionado utiliza el paradigma de programación funcional de Haskell y aprovecha la biblioteca `Text.ParserCombinators.Parsec` para analizar expresiones.
+
+El código consta de tres funciones principales:
+
+\begin{enumerate}
+  \item \textbf{Análisis de Polinomios:} La función `parsePolynomial` toma una representación en cadena de un polinomio como entrada y lo analiza en una forma estructurada para su posterior manipulación. Utiliza la función `polynomialParser`, que a su vez utiliza `termParser` para analizar términos individuales dentro de la expresión polinómica.
+
+  \item \textbf{Cálculo de Límites:} La función `calculateLimit` calcula el límite de una función polinómica para un valor dado de `x`. Evalúa la expresión polinómica en el punto `x` especificado sumando las contribuciones de cada término en el polinomio.
+
+  \item \textbf{Función Principal:} La función `main` orquesta la interacción con el usuario. Solicita al usuario que introduzca una expresión polinómica, la analiza, solicita el valor de `x` y luego calcula y muestra el límite de la función polinómica en ese valor de `x`.
+\end{enumerate}
+
+Este documento proporcionará una explicación detallada de cada componente del código, incluyendo cómo se analizan los polinomios, se extraen los términos y se calculan los límites. Además, cubrirá el uso de los constructos de análisis monádicos de Haskell y las técnicas de programación funcional empleadas en la implementación.
+
+\section{Análisis de Polinomios}
+
+\subsection{Función `parsePolynomial`}
+
+\begin{haskell}
+  parsePolynomial :: String -> Either ParseError Polynomial -- parse polynomial from string
+  parsePolynomial input = parse polynomialParser "" input -- parse polynomial from string
+\end{haskell}
+La función \texttt{}{parsePolynomial} es una función que toma una cadena de caracteres como entrada y devuelve un valor de tipo \texttt{Either ParseError Polynomial}.
+
+\begin{note}
+El tipo \texttt{Either a b} en Haskell es un tipo que puede contener un valor de tipo a o un valor de tipo b. En este caso, a es ParseError y b es Polynomial. Esto significa que la función parsePolynomial puede devolver un error de análisis (ParseError) o un polinomio (Polynomial).
+\end{note}
+
+La función \texttt{parsePolynomial} utiliza la función \texttt{parse} de la biblioteca Parsec. La función parse toma tres argumentos:
+\begin{enumerate}
+  \item Un analizador (polynomialParser en este caso), que es una función que intenta convertir una cadena de caracteres en un valor de algún tipo. 
+  \item Un nombre de fuente, que se utiliza en los mensajes de error para indicar de dónde provienen los datos de entrada. En este caso, se pasa una cadena vacía porque los datos de entrada no provienen de ninguna fuente en particular.
+  \item Los datos de entrada que se van a analizar (input en este caso).
+\end{enumerate}
+
+La función parse intenta aplicar el analizador a los datos de entrada. Si el análisis tiene éxito, devuelve \texttt{Right polynomial}, donde \texttt{polynomial} es el polinomio resultante. Si el análisis falla, devuelve Left \texttt{parseError}, donde \texttt{parseError} es un mensaje de error que describe por qué falló el análisis.
+
+Por lo tanto, la función \texttt{parsePolynomial} intenta convertir una cadena de caracteres en un polinomio utilizando el analizador \texttt{polynomialParser}. Si tiene éxito, devuelve el polinomio. Si falla, devuelve un mensaje de error.
+
+\subsection{Función `polynomialParser`}
+
+\begin{haskell}
+  polynomialParser :: Parser Polynomial 
+  polynomialParser = do
+  terms <- sepBy termParser (skipMany space >> (char '+' <|> char '-') >> skipMany space) -- parse terms separated by '+' or '-'
+  return \$ Polynomial terms -- return polynomial
+\end{haskell}
+
+La función polynomialParser es un analizador que se utiliza para analizar una cadena de caracteres y convertirla en un polinomio. Un polinomio es una suma de términos, por lo que este analizador busca una serie de términos separados por '+' o '-'.
+
+\begin{enumerate}
+  \item \texttt{terms <- sepBy termParser (skipMany space >> (char '+' <|> char '-') >> skipMany space)}: Aquí se utiliza la función \texttt{sepBy} de Parsec, que toma dos analizadores como argumentos. El primer analizador, \texttt{termParser}, se utiliza para analizar los términos individuales del polinomio. El segundo analizador, \texttt{(skipMany space >> (char '+' <|> char '-') >> skipMany space)}, se utiliza para analizar los separadores entre los términos, que en este caso son '+' o '-' rodeados por cualquier cantidad de espacios. \texttt{sepBy} aplica estos dos analizadores de forma alternativa hasta que no puede aplicarlos más, y devuelve una lista de todos los términos que pudo analizar.
+  \item \texttt{return \$ Polynomial terms}: Finalmente, se construye un polinomio a partir de la lista de términos y se devuelve. En Haskell, return en el contexto de un monad (como Parser) no es como return en la mayoría de los otros lenguajes de programación. No termina la función. En su lugar, envuelve un valor en la monad. En este caso, envuelve el polinomio en el analizador, lo que significa que el resultado del analizador es ese polinomio.
+\end{enumerate}
+
+Por lo tanto, polynomialParser es un analizador que convierte una cadena de caracteres en un polinomio, analizando los términos individuales y los separadores entre ellos.
+
+\subsection{Función `termParser`}
+
+\begin{haskell}
+  termParser :: Parser Term
+  termParser = try termWithX <|> termWithoutX
+  where
+    termWithX = do
+      sign <- option '+' (skipMany space >> (char '-' <|> char '+'))
+      coefficient <- option "1" (many1 (digit <|> char '.')) -- parse coefficient
+      skipMany space
+      char 'x' -- parse 'x'
+      skipMany space
+      exponent <- option "1" (char '^' >> many1 digit) -- parse exponent
+      let signedCoefficient = if sign == '-' then read ("-" ++ coefficient) else read coefficient
+      return \$ Term (signedCoefficient :: Double) (read exponent :: Int) -- return term
+    termWithoutX = do
+      sign <- option '+' (skipMany space >> (char '-' <|> char '+'))
+      coefficient <- many1 (digit <|> char '.')
+      let signedCoefficient = if sign == '-' then read ("-" ++ coefficient) else read coefficient
+      return \$ Term (signedCoefficient :: Double) 0
+\end{haskell}
+
+La función \texttt{termParser} es un analizador que se utiliza para analizar una cadena de caracteres y convertirla en un término de un polinomio. Un término de un polinomio es de la forma ax\^n, donde a es el coeficiente, \texttt{x} es la variable y \texttt{n} es el exponente.
+a función \texttt{termParser} utiliza la función \texttt{try} de \texttt{Parsec} para intentar aplicar el analizador \texttt{termWithX}. Si \texttt{termWithX} falla, entonces \texttt{termParser} intentará aplicar el analizador \texttt{termWithoutX}.
+
+\begin{enumerate}
+  \item \texttt{termWithX}: Este analizador se utiliza para analizar términos que incluyen la variable \texttt{x}.
+    \begin{itemize}
+      \item \texttt{sign <- option '+' (skipMany space >> (char '-' <|> char '+'))}: Aquí se utiliza la función option de Parsec para intentar analizar un signo '+' o '-'. Si no puede analizar un signo, entonces devuelve '+' por defecto.
+      \item \texttt{coefficient <- option "1" (many1 (digit <|> char '.'))}: Aquí se intenta analizar el coeficiente del término. Si no puede analizar un coeficiente, entonces devuelve "1" por defecto.
+      \item \texttt{skipMany space}: Aquí se salta cualquier cantidad de espacios.
+      \item \texttt{char 'x'}: Aquí se analiza la variable 'x'.
+      \item \texttt{exponent <- option "1" (char '\^' >> many1 digit)}: Aquí se intenta analizar el exponente del término. Si no puede analizar un exponente, entonces devuelve "1" por defecto.
+      \item \texttt{let signedCoefficient = if sign == '-' then read ("-" ++ coefficient) else read coefficient}: Aquí se calcula el coeficiente firmado en función del signo.
+      \item \texttt{return \$ Term (signedCoefficient :: Double) (read exponent :: Int)}: Finalmente, se construye un término a partir del coeficiente firmado y el exponente, y se devuelve.
+    \end{itemize}
+  \item \texttt{termWithoutX}: Este analizador se utiliza para analizar términos que no incluyen la variable x.
+    \begin{itemize}
+      \item \texttt{sign <- option '+' (skipMany space >> (char '-' <|> char '+'))}: Aquí se intenta analizar un signo '+' o '-'. Si no puede analizar un signo, entonces devuelve '+' por defecto.
+      \item \texttt{coefficient <- many1 (digit <|> char '.')}: Aquí se intenta analizar el coeficiente del término.
+      \item \texttt{let signedCoefficient = if sign == '-' then read ("-" ++ coefficient) else read coefficient}: Aquí se calcula el coeficiente firmado en función del signo.
+      \item \texttt{return \$ Term (signedCoefficient :: Double) 0}: Finalmente, se construye un término a partir del coeficiente firmado y un exponente de 0 (ya que no hay variable x), y se devuelve.
+    \end{itemize}
+\end{enumerate}
+
+Por lo tanto, termParser es un analizador que convierte una cadena de caracteres en un término de un polinomio, ya sea con o sin la variable x.
+
+\section{Cálculo de Límites}
+
+\subsection{Función `calculateLimit`}
+\begin{haskell}
+  calculateLimit :: Polynomial -> Double -> Double -- calculate limit
+  calculateLimit (Polynomial terms) x = sum $ map (\(Term coefficient exponent) -> coefficient * (x ** fromIntegral exponent)) terms -- calculate limit
+\end{haskell}
+
+La función \texttt{calculateLimit} toma un polinomio y un valor de \texttt{x} como entrada y calcula el límite del polinomio cuando \texttt{x} tiende a ese valor.
+
+\begin{enumerate}
+  \item \texttt{(Polynomial terms)}: Este es un patrón de coincidencia que extrae la lista de términos del polinomio de entrada.
+  \item \texttt{map (\\(Term coefficient exponent) -> coefficient \* (x \*\* fromIntegral exponent)) terms}: Aquí se utiliza la función map para aplicar una función a cada término de la lista de términos. La función que se aplica es una función lambda que toma un término y calcula el valor del término para el valor dado de x. Para hacer esto, multiplica el coeficiente del término por \texttt{x} elevado al exponente del término. La función \texttt{fromIntegral} se utiliza para convertir el exponente a un número de punto flotante, ya que la operación de exponenciación (\*\*) requiere que ambos operandos sean de punto flotante.
+  \item \texttt{sum}: Finalmente, se utiliza la función sum para sumar todos los valores de los términos calculados. Esto da el valor del polinomio para el valor dado de x.
+\end{enumerate}
+
+Por lo tanto, calculateLimit es una función que calcula el límite de un polinomio cuando x tiende a un valor dado.
+
+\section{Función Principal}
+
+\begin{haskell}
+main :: IO ()
+main = do
+  putStrLn "Enter a polynomial:" -- prompt user for polynomial
+  input <- getLine -- read input
+  let polynomial = parsePolynomial input -- parse polynomial
+  case polynomial of -- handle result
+    Left error -> print error -- print error
+    Right polynomial -> do -- calculate limit
+      putStrLn "Enter a value for x:" -- prompt user for x
+      x <- readLn -- read x
+      print $ calculateLimit polynomial x -- print limit
+\end{haskell}
+
+La función main es la función principal que se ejecuta cuando se inicia el programa. Aquí está el desglose de cómo funciona:
+
+\begin{enumerate}
+  \item \texttt{putStrLn "Enter a polynomial:"}: Aquí se imprime un mensaje para solicitar al usuario que introduzca un polinomio.
+  \item \texttt{input <- getLine}: Aquí se lee una línea de entrada del usuario y se almacena en la variable \texttt{input}.
+  \item \texttt{let polynomial = parsePolynomial input}: Aquí se analiza el polinomio introducido por el usuario utilizando la función \texttt{parsePolynomial} y se almacena en la variable \texttt{polynomial}.
+  \item \texttt{case polynomial of}: Aquí se utiliza la expresión de caso para manejar el resultado del análisis del polinomio.
+    \begin{itemize}
+      \item \texttt{Left error -> print error}: Si el análisis del polinomio falla, se imprime el error.
+      \item \texttt{Right polynomial -> do}: Si el análisis del polinomio tiene éxito, se procede a calcular el límite.
+        \begin{itemize}
+          \item \texttt{putStrLn "Enter a value for x:"}: Aquí se imprime un mensaje para solicitar al usuario que introduzca un valor para \texttt{x}.
+          \item \texttt{x <- readLn}: Aquí se lee un valor de \texttt{x} del usuario y se almacena en la variable \texttt{x}.
+          \item \texttt{print \$ calculateLimit polynomial x}: Aquí se calcula el límite del polinomio para el valor dado de \texttt{x} y se imprime.
+        \end{itemize}
+    \end{itemize}
+\end{enumerate}
+
+Por lo tanto, la función main orquesta la interacción con el usuario, solicitando un polinomio, analizándolo, solicitando un valor para \texttt{x} y calculando y mostrando el límite del polinomio para ese valor de \texttt{x}.
+
+\end{document}
